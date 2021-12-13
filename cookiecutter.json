@@ -1,0 +1,8 @@
+{
+    "directory_name":  "pet",
+    "app_name": "{{ cookiecutter.directory_name|lower|replace(' ', '-') }}",
+    "repository": "repository",
+    "develop_branch": "master",
+    "api_description": "API description",
+    "api_host": "api.example.com"
+}
