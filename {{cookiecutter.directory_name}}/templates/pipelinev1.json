@@ -6,41 +6,95 @@
       "Type": "String",
       "AllowedValues": [
         "dev",
-        "qa",
         "staging",
         "prod"
       ],
-      "Description": "Environment name."
+      "Description": "Environment name.",
+      "Default": "dev"
     },
     "AppName": {
       "Type": "String",
       "ConstraintDescription": "[a-z]+",
       "Description": "The project name.",
-      "Default": "{{cookiecutter.app_name}}"
+      "Default": "container-back"
+    },
+    "GitOwner": {
+      "Type": "String",
+      "Description": "",
+      "Default": "carlosanorve"
     },
     "Branch": {
       "Type": "String",
       "Description": "Branch name for deploy de project.",
-      "Default": "{{cookiecutter.develop_branch}}"
+      "Default": "main"
     },
     "Repository": {
       "Type": "String",
       "Description": "Repository name.",
-      "Default": "{{cookiecutter.repository}}"
+      "Default": "container-back"
     },
     "PrincipalTemplate": {
       "Type": "String",
       "Description": "Name of the main template in the project.",
       "Default": "projectTemplate.json"
     },
-    "ParametersTemplate": {
+    "NetworkStackParameter": {
       "Type": "String",
-      "Description": "One json string with the all parameter use in the PrincipalTemplate.",
-      "Default": "{}"
+      "Description": "The stack name for get all network configuration.",
+      "Default": ""
+    },
+    "GitHubToken": {
+      "Type": "String",
+      "Description": "",
+      "Default": "{{cookiecutter._gitHubToken}}"
     }
   },
   "Resources": {
-    "AppPipeline{{cookiecutter.app_name}}": {
+    "WH{{cookiecutter.app_name}}Pipeline": {
+      "Type": "AWS::CodePipeline::Webhook",
+      "Properties": {
+        "Authentication": "GITHUB_HMAC",
+        "AuthenticationConfiguration": {
+          "SecretToken": {
+            "Ref": "GitHubToken"
+          }
+        },
+        "Filters": [
+          {
+            "JsonPath": "$.ref",
+            "MatchEquals": "'refs/heads/{Branch}'"
+          }
+        ],
+        "TargetPipeline": {
+          "Ref": "PL{{cookiecutter.app_name}}Pipeline"
+        },
+        "Name": {
+          "Fn::Join": [
+            "-",
+            [
+              {
+                "Ref": "Environment"
+              },
+              {
+                "Ref": "AppName"
+              },
+              "pipeline-webhook"
+            ]
+          ]
+        },
+        "TargetAction": {
+                  "Fn::Sub": "Source${AppName}"
+                },
+        "RegisterWithThirdParty": true,
+        "TargetPipelineVersion": {
+          "Fn::GetAtt": [
+            "PL{{cookiecutter.app_name}}Pipeline",
+            "Version"
+          ]
+        }
+      }
+    },
+    "PL{{cookiecutter.app_name}}Pipeline": {
       "Type": "AWS::CodePipeline::Pipeline",
       "Properties": {
         "Name": {
@@ -59,7 +113,7 @@
         },
         "RoleArn": {
           "Fn::GetAtt": [
-            "RoleCodePipeline{{cookiecutter.app_name}}",
+            "ROL{{cookiecutter.app_name}}CodePipeline",
             "Arn"
           ]
         },
@@ -73,9 +127,9 @@
                 },
                 "ActionTypeId": {
                   "Category": "Source",
-                  "Owner": "AWS",
+                  "Owner": "ThirdParty",
                   "Version": 1,
-                  "Provider": "CodeCommit"
+                  "Provider": "GitHub"
                 },
                 "OutputArtifacts": [
                   {
@@ -83,13 +137,19 @@
                   }
                 ],
                 "Configuration": {
-                  "BranchName": {
+                  "OAuthToken": {
+                    "Ref": "GitHubToken"
+                  },
+                  "Owner": {
+                    "Ref": "GitOwner"
+                  },
+                  "Branch": {
                     "Ref": "Branch"
                   },
-                  "RepositoryName": {
+                  "Repo": {
                     "Ref": "Repository"
                   },
-                  "PollForSourceChanges": false
+                  "PollForSourceChanges": true
                 },
                 "RunOrder": 1
               }
@@ -115,14 +175,14 @@
                 },
                 "Configuration": {
                   "ProjectName": {
-                    "Ref": "CodeBuildProject{{cookiecutter.app_name}}"
+                    "Ref": "CB{{cookiecutter.app_name}}Project"
                   },
                   "EnvironmentVariables": {
                     "Fn::Sub": [
                       "[{\"name\":\"BUCKETTEMPLATES\",\"value\":\"${bucket}\",\"type\":\"PLAINTEXT\"}]",
                       {
                         "bucket": {
-                          "Ref": "BucketCodePipelineArtifactStore{{cookiecutter.app_name}}"
+                          "Ref": "S3{{cookiecutter.app_name}}CodePipelineArtifactStore"
                         }
                       }
                     ]
@@ -131,7 +191,7 @@
                 "RunOrder": 1,
                 "OutputArtifacts": [
                   {
-                    "Name": "projectsBuild"
+                    "Name": "projectsBuilded"
                   }
                 ]
               }
@@ -183,7 +243,7 @@
                     "Fn::Join": [
                       "::",
                       [
-                        "projectsBuild",
+                        "projectsBuilded",
                         {
                           "Ref": "PrincipalTemplate"
                         }
@@ -192,18 +252,34 @@
                   },
                   "RoleArn": {
                     "Fn::GetAtt": [
-                      "RoleCloudFormation{{cookiecutter.app_name}}",
+                      "ROL{{cookiecutter.app_name}}CloudFormation",
                       "Arn"
                     ]
                   },
                   "ParameterOverrides": {
-                    "Ref": "ParametersTemplate"
+                    "Fn::Sub": [
+                      "{\n  \"Environment\": \"${Environment}\",\n  \"NetworkStackParameter\": \"${NetworkStackParameter}\",\n  \"ArtifactsBucket\": \"${ArtifactsBucket}\",\n  \"projectName\": \"${projectName}\"\n}",
+                      {
+                        "Environment": {
+                          "Ref": "Environment"
+                        },
+                        "NetworkStackParameter": {
+                          "Ref": "NetworkStackParameter"
+                        },
+                        "ArtifactsBucket": {
+                          "Ref": "S3{{cookiecutter.app_name}}CodePipelineArtifactStore"
+                        },
+                        "projectName": {
+                          "Ref": "AppName"
+                        }
+                      }
+                    ]
                   }
                 },
                 "RunOrder": 1,
                 "InputArtifacts": [
                   {
-                    "Name": "projectsBuild"
+                    "Name": "projectsBuilded"
                   }
                 ]
               },
@@ -249,7 +325,7 @@
                 "RunOrder": 2,
                 "InputArtifacts": [
                   {
-                    "Name": "projectsBuild"
+                    "Name": "projectsBuilded"
                   }
                 ]
               }
@@ -259,169 +335,12 @@
         "ArtifactStore": {
           "Type": "S3",
           "Location": {
-            "Ref": "BucketCodePipelineArtifactStore{{cookiecutter.app_name}}"
+            "Ref": "S3{{cookiecutter.app_name}}CodePipelineArtifactStore"
           }
         }
       }
     },
-    "RoleAmazonCloudWatchEvent{{cookiecutter.app_name}}": {
-      "Type": "AWS::IAM::Role",
-      "Properties": {
-        "AssumeRolePolicyDocument": {
-          "Version": "2012-10-17",
-          "Statement": [
-            {
-              "Effect": "Allow",
-              "Principal": {
-                "Service": [
-                  "events.amazonaws.com"
-                ]
-              },
-              "Action": "sts:AssumeRole"
-            }
-          ]
-        },
-        "Path": "/",
-        "Policies": [
-          {
-            "PolicyName": {
-              "Fn::Join": [
-                "-",
-                [
-                  {
-                    "Ref": "Environment"
-                  },
-                  {
-                    "Ref": "AppName"
-                  },
-                  "pipeline-execution"
-                ]
-              ]
-            },
-            "PolicyDocument": {
-              "Version": "2012-10-17",
-              "Statement": [
-                {
-                  "Effect": "Allow",
-                  "Action": "codepipeline:StartPipelineExecution",
-                  "Resource": {
-                    "Fn::Join": [
-                      "",
-                      [
-                        "arn:aws:codepipeline:",
-                        {
-                          "Ref": "AWS::Region"
-                        },
-                        ":",
-                        {
-                          "Ref": "AWS::AccountId"
-                        },
-                        ":",
-                        {
-                          "Ref": "AppPipeline{{cookiecutter.app_name}}"
-                        }
-                      ]
-                    ]
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      }
-    },
-    "RuleAmazonCloudWatchEvent{{cookiecutter.app_name}}": {
-      "Type": "AWS::Events::Rule",
-      "Properties": {
-        "EventPattern": {
-          "source": [
-            "aws.codecommit"
-          ],
-          "detail-type": [
-            "CodeCommit Repository State Change"
-          ],
-          "resources": [
-            {
-              "Fn::Join": [
-                "",
-                [
-                  "arn:aws:codecommit:",
-                  {
-                    "Ref": "AWS::Region"
-                  },
-                  ":",
-                  {
-                    "Ref": "AWS::AccountId"
-                  },
-                  ":",
-                  {
-                    "Ref": "Repository"
-                  }
-                ]
-              ]
-            }
-          ],
-          "detail": {
-            "event": [
-              "referenceCreated",
-              "referenceUpdated"
-            ],
-            "referenceType": [
-              "branch"
-            ],
-            "referenceName": [
-              {
-                "Ref": "Branch"
-              }
-            ]
-          }
-        },
-        "Targets": [
-          {
-            "Arn": {
-              "Fn::Join": [
-                "",
-                [
-                  "arn:aws:codepipeline:",
-                  {
-                    "Ref": "AWS::Region"
-                  },
-                  ":",
-                  {
-                    "Ref": "AWS::AccountId"
-                  },
-                  ":",
-                  {
-                    "Ref": "AppPipeline{{cookiecutter.app_name}}"
-                  }
-                ]
-              ]
-            },
-            "RoleArn": {
-              "Fn::GetAtt": [
-                "RoleAmazonCloudWatchEvent{{cookiecutter.app_name}}",
-                "Arn"
-              ]
-            },
-            "Id": {
-              "Fn::Join": [
-                "-",
-                [
-                  {
-                    "Ref": "Environment"
-                  },
-                  {
-                    "Ref": "AppName"
-                  },
-                  "codepipeline-AppPipeline"
-                ]
-              ]
-            }
-          }
-        ]
-      }
-    },
-    "RoleCodePipeline{{cookiecutter.app_name}}": {
+    "ROL{{cookiecutter.app_name}}CodePipeline": {
       "Type": "AWS::IAM::Role",
       "Properties": {
         "AssumeRolePolicyDocument": {
@@ -538,7 +457,7 @@
         ]
       }
     },
-    "BucketCodePipelineArtifactStore{{cookiecutter.app_name}}": {
+    "S3{{cookiecutter.app_name}}CodePipelineArtifactStore": {
       "Type": "AWS::S3::Bucket",
       "Properties": {
         "BucketName": {
@@ -560,7 +479,7 @@
         }
       }
     },
-    "RoleCodeBuildProject{{cookiecutter.app_name}}": {
+    "ROL{{cookiecutter.app_name}}CB{{cookiecutter.app_name}}Project": {
       "Type": "AWS::IAM::Role",
       "Properties": {
         "RoleName": {
@@ -634,7 +553,7 @@
         ]
       }
     },
-    "CodeBuildProject{{cookiecutter.app_name}}": {
+    "CB{{cookiecutter.app_name}}Project": {
       "Type": "AWS::CodeBuild::Project",
       "Properties": {
         "Name": {
@@ -653,7 +572,7 @@
         },
         "ServiceRole": {
           "Fn::GetAtt": [
-            "RoleCodeBuildProject{{cookiecutter.app_name}}",
+            "ROL{{cookiecutter.app_name}}CB{{cookiecutter.app_name}}Project",
             "Arn"
           ]
         },
@@ -674,7 +593,7 @@
             {
               "Name": "BUCKET",
               "Value": {
-                "Ref": "BucketCodePipelineArtifactStore{{cookiecutter.app_name}}"
+                "Ref": "S3{{cookiecutter.app_name}}CodePipelineArtifactStore"
               }
             }
           ]
@@ -693,7 +612,7 @@
         ]
       }
     },
-    "RoleCloudFormation{{cookiecutter.app_name}}": {
+    "ROL{{cookiecutter.app_name}}CloudFormation": {
       "Type": "AWS::IAM::Role",
       "Properties": {
         "RoleName": {
@@ -921,10 +840,10 @@
     }
   },
   "Outputs": {
-    "BucketArtifacts{{cookiecutter.app_name}}": {
+    "S3{{cookiecutter.app_name}}Artifacts": {
       "Description": "A reference to the created S3 for artifacts.",
       "Value": {
-        "Ref": "BucketCodePipelineArtifactStore{{cookiecutter.app_name}}"
+        "Ref": "S3{{cookiecutter.app_name}}CodePipelineArtifactStore"
       },
       "Export": {
         "Name": {
@@ -933,5 +852,4 @@
       }
     }
   }
-}
-  
+}  

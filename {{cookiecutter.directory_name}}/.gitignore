@@ -141,3 +141,5 @@ cython_debug/
 codebuild_build.sh
 artifacts
 layers_zips
+api_local/
+.idea/

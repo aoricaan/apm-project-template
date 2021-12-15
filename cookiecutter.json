@@ -4,5 +4,10 @@
     "repository": "repository",
     "develop_branch": "master",
     "api_description": "API description",
-    "api_host": "api.example.com"
+    "api_host": "api.example.com",
+    "_gitHubToken": "{{resolve:ssm:GitHubToken:1}}",
+    "_lambdaName": "{{lambdaName}}",
+    "_code": "{{code}}",
+    "_handler": "{{handler}}",
+    "_name": "{{name}}"
 }
